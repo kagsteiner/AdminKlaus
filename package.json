@@ -1,0 +1,31 @@
+{
+  "name": "admin-klaus",
+  "version": "1.0.0",
+  "description": "AI-powered shell for Unix sysadmins - execute commands via natural language",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "klaus": "./src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "keywords": [
+    "ai",
+    "shell",
+    "sysadmin",
+    "ssh",
+    "claude",
+    "automation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "chalk": "^5.3.0",
+    "dotenv": "^16.4.5",
+    "ssh2": "^1.16.0"
+  }
+}
+
