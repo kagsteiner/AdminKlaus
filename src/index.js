@@ -91,31 +91,75 @@ class AdminKlaus {
   }
 
   /**
+   * Expand path with home directory substitution
+   */
+  expandPath(keyPath) {
+    if (!keyPath) return null;
+    return keyPath
+      .replace(/^~/, os.homedir())
+      .replace(/^\$HOME/, os.homedir())
+      .replace(/^%USERPROFILE%/i, os.homedir());
+  }
+
+  /**
    * Connect to an SSH server
    */
   async connectToServer() {
     this.cli.print('\n--- SSH Connection Setup ---\n', 'header');
 
-    const host = await this.cli.prompt('Host');
-    const port = await this.cli.prompt('Port (22)') || '22';
-    const username = await this.cli.prompt('Username');
+    // Get defaults from environment
+    const defaultHost = process.env.SSH_HOST || '';
+    const defaultPort = process.env.SSH_PORT || '22';
+    const defaultUsername = process.env.SSH_USERNAME || '';
+    const defaultKeyPath = process.env.SSH_KEY_PATH || '';
 
-    // Ask for auth method
-    this.cli.print('\nAuthentication method:', 'info');
-    this.cli.print('  1. Password', 'default');
-    this.cli.print('  2. Private Key', 'default');
-    const authMethod = await this.cli.prompt('Choose (1/2)');
+    // Show defaults in prompts
+    const hostPrompt = defaultHost ? `Host [${defaultHost}]` : 'Host';
+    const host = await this.cli.prompt(hostPrompt) || defaultHost;
+    if (!host) {
+      this.cli.print('Host is required', 'error');
+      return;
+    }
+
+    const portPrompt = `Port [${defaultPort}]`;
+    const port = await this.cli.prompt(portPrompt) || defaultPort;
+
+    const usernamePrompt = defaultUsername ? `Username [${defaultUsername}]` : 'Username';
+    const username = await this.cli.prompt(usernamePrompt) || defaultUsername;
+    if (!username) {
+      this.cli.print('Username is required', 'error');
+      return;
+    }
+
+    // Determine auth method - default to key if SSH_KEY_PATH is set
+    let authMethod;
+    if (defaultKeyPath) {
+      this.cli.print('\nAuthentication method:', 'info');
+      this.cli.print('  1. Password', 'default');
+      this.cli.print(`  2. Private Key [default: ${defaultKeyPath}]`, 'default');
+      authMethod = await this.cli.prompt('Choose [2]') || '2';
+    } else {
+      this.cli.print('\nAuthentication method:', 'info');
+      this.cli.print('  1. Password', 'default');
+      this.cli.print('  2. Private Key', 'default');
+      authMethod = await this.cli.prompt('Choose (1/2)');
+    }
 
     let password, privateKey, passphrase;
 
     if (authMethod === '2') {
-      const keyPath = await this.cli.prompt('Path to private key');
+      const keyPathPrompt = defaultKeyPath 
+        ? `Path to private key [${defaultKeyPath}]` 
+        : 'Path to private key';
+      const keyPath = await this.cli.prompt(keyPathPrompt) || defaultKeyPath;
+      
+      if (!keyPath) {
+        this.cli.print('Key path is required', 'error');
+        return;
+      }
+
       try {
-        // Handle ~ and $HOME expansion, works on Windows and Unix
-        const expandedPath = keyPath
-          .replace(/^~/, os.homedir())
-          .replace(/^\$HOME/, os.homedir())
-          .replace(/^%USERPROFILE%/i, os.homedir());
+        const expandedPath = this.expandPath(keyPath);
         privateKey = await fs.readFile(expandedPath, 'utf-8');
       } catch (err) {
         this.cli.print(`Error reading key file: ${err.message}`, 'error');
