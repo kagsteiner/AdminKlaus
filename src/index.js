@@ -17,10 +17,46 @@ class AdminKlaus {
     this.contextManager = new ContextManager();
     this.sshManager = new SSHManager();
     this.llmClient = null;
-    
+
     this.systemDescription = '';
     this.sshConfig = null;
     this.sudoPassword = null;
+
+    // Patterns for commands that produce continuous/streaming output
+    this.streamingCommandPatterns = [
+      /^pm2\s+logs?/i,                    // pm2 logs, pm2 log
+      /^tail\s+(-[fF]|--follow)/,         // tail -f, tail -F, tail --follow
+      /^journalctl\s+.*-f/,               // journalctl -f (follow)
+      /^watch\s+/,                        // watch command
+      /^htop(\s|$)/,                      // htop
+      /^top(\s|$)/,                       // top
+      /^less(\s|$)/,                      // less (interactive)
+      /^more(\s|$)/,                      // more (interactive)
+      /^vim?(\s|$)/,                      // vi, vim
+      /^nano(\s|$)/,                      // nano
+      /^docker\s+logs\s+.*-f/,            // docker logs -f
+      /^docker-compose\s+logs\s+.*-f/,    // docker-compose logs -f
+      /^kubectl\s+logs\s+.*-f/,           // kubectl logs -f
+      /^ping\s+/,                         // ping (continuous by default on Linux)
+      /^tcpdump(\s|$)/,                   // tcpdump
+      /^dmesg\s+.*-w/,                    // dmesg -w (follow)
+      /^iostat\s+.*\d+/,                  // iostat with interval
+      /^vmstat\s+.*\d+/,                  // vmstat with interval
+      /^sar\s+.*\d+/,                     // sar with interval
+      /^nmon(\s|$)/,                      // nmon
+      /^iotop(\s|$)/,                     // iotop
+      /^iftop(\s|$)/,                     // iftop
+      /^nethogs(\s|$)/,                   // nethogs
+      /^multitail(\s|$)/,                 // multitail
+    ];
+  }
+
+  /**
+   * Check if a command is a streaming command
+   */
+  isStreamingCommand(command) {
+    const trimmedCommand = command.trim();
+    return this.streamingCommandPatterns.some(pattern => pattern.test(trimmedCommand));
   }
 
   /**
@@ -148,11 +184,11 @@ class AdminKlaus {
     let password, privateKey, passphrase;
 
     if (authMethod === '2') {
-      const keyPathPrompt = defaultKeyPath 
-        ? `Path to private key [${defaultKeyPath}]` 
+      const keyPathPrompt = defaultKeyPath
+        ? `Path to private key [${defaultKeyPath}]`
         : 'Path to private key';
       const keyPath = await this.cli.prompt(keyPathPrompt) || defaultKeyPath;
-      
+
       if (!keyPath) {
         this.cli.print('Key path is required', 'error');
         return;
@@ -190,6 +226,18 @@ class AdminKlaus {
       if (test.success) {
         this.cli.print(`\n${test.output}\n`, 'success');
       }
+
+      // Ask for optional sudo password
+      this.cli.print('\nSudo password (optional - press Enter to skip):', 'info');
+      this.cli.print('If you skip, commands requiring sudo will fail.', 'default');
+      const sudoPass = await this.cli.promptPassword('Sudo password');
+      if (sudoPass) {
+        this.sudoPassword = sudoPass;
+        this.cli.print('Sudo password saved for this session.', 'success');
+      } else {
+        this.sudoPassword = null;
+        this.cli.print('No sudo password set. Sudo commands will not be available.', 'warning');
+      }
     } catch (err) {
       spinner.stop(false);
       this.cli.print(`Connection failed: ${err.message}`, 'error');
@@ -212,7 +260,7 @@ class AdminKlaus {
    */
   showStatus() {
     this.cli.print('\n--- Status ---\n', 'header');
-    
+
     // Connection status
     this.cli.printConnectionStatus(
       this.sshManager.isConnected,
@@ -240,7 +288,11 @@ class AdminKlaus {
 
     if (requiresSudo) {
       if (!this.sudoPassword) {
-        this.sudoPassword = await this.cli.promptPassword('Sudo password');
+        return {
+          stdout: '',
+          stderr: 'Sudo password not configured. Please reconnect with /connect and provide a sudo password when prompted.',
+          exitCode: 1,
+        };
       }
       options.sudo = true;
       options.sudoPassword = this.sudoPassword;
@@ -248,7 +300,7 @@ class AdminKlaus {
 
     try {
       const result = await this.sshManager.execute(command, options);
-      
+
       // Log the command output
       this.contextManager.addCommandOutput(
         command,
@@ -267,6 +319,67 @@ class AdminKlaus {
   }
 
   /**
+   * Execute a streaming command via SSH (for commands like pm2 logs, tail -f, etc.)
+   */
+  async executeStreamingCommand(command, requiresSudo = false) {
+    const options = {
+      onData: (text) => this.cli.printStreamingLine(text),
+      onError: (text) => this.cli.printStreamingLine(text),
+    };
+
+    if (requiresSudo) {
+      if (!this.sudoPassword) {
+        return {
+          stdout: '',
+          stderr: 'Sudo password not configured. Please reconnect with /connect and provide a sudo password when prompted.',
+          exitCode: 1,
+          aborted: false,
+        };
+      }
+      options.sudo = true;
+      options.sudoPassword = this.sudoPassword;
+    }
+
+    try {
+      // Print the streaming header
+      this.cli.printStreamingHeader(command);
+
+      // Start the streaming command
+      const { abort, promise } = this.sshManager.executeStreaming(command, options);
+
+      // Set up key capture to abort on 'q'
+      const cleanup = this.cli.startStreamingKeyCapture(() => {
+        abort();
+      });
+
+      // Wait for the command to complete (or be aborted)
+      const result = await promise;
+
+      // Clean up key capture
+      cleanup();
+
+      // Print the footer
+      this.cli.printStreamingFooter(result.aborted);
+
+      // Log the command output
+      this.contextManager.addCommandOutput(
+        command,
+        result.stdout + (result.stderr ? '\n' + result.stderr : ''),
+        result.exitCode
+      );
+
+      return result;
+    } catch (err) {
+      return {
+        stdout: '',
+        stderr: err.message,
+        exitCode: 1,
+        aborted: false,
+      };
+    }
+  }
+
+  /**
    * Handle tool calls from the LLM
    */
   async handleToolCalls(toolCalls) {
@@ -274,9 +387,16 @@ class AdminKlaus {
 
     for (const toolCall of toolCalls) {
       if (toolCall.name === 'execute_command') {
-        const { command, requires_sudo, explanation } = toolCall.input;
+        const { command, requires_sudo, is_streaming, explanation } = toolCall.input;
+
+        // Auto-detect streaming commands as fallback
+        const shouldStream = is_streaming || this.isStreamingCommand(command);
 
         this.cli.printCommandExecution(command, explanation);
+
+        if (shouldStream) {
+          this.cli.print('  (streaming command - press \'q\' to stop)', 'warning');
+        }
 
         // Ask for confirmation
         const confirmed = await this.cli.confirm('Execute this command?');
@@ -290,12 +410,18 @@ class AdminKlaus {
           continue;
         }
 
-        // Execute the command
-        const spinner = this.cli.startSpinner('Executing...');
-        const result = await this.executeCommand(command, requires_sudo);
-        spinner.stop(result.exitCode === 0);
+        let result;
 
-        this.cli.printCommandOutput(result.stdout, result.stderr, result.exitCode);
+        if (shouldStream) {
+          // Use streaming execution for continuous output commands
+          result = await this.executeStreamingCommand(command, requires_sudo);
+        } else {
+          // Use regular execution
+          const spinner = this.cli.startSpinner('Executing...');
+          result = await this.executeCommand(command, requires_sudo);
+          spinner.stop(result.exitCode === 0);
+          this.cli.printCommandOutput(result.stdout, result.stderr, result.exitCode);
+        }
 
         results.push({
           type: 'tool_result',
@@ -305,11 +431,12 @@ class AdminKlaus {
             stdout: result.stdout,
             stderr: result.stderr,
             success: result.exitCode === 0,
+            aborted: result.aborted || false,
           }),
         });
 
-        // If command failed, ask user what to do
-        if (result.exitCode !== 0) {
+        // If command failed (and wasn't intentionally aborted), ask user what to do
+        if (result.exitCode !== 0 && !result.aborted) {
           this.cli.print('Command failed!', 'error');
           const shouldContinue = await this.cli.confirm('Continue with next commands?');
           if (!shouldContinue) {
@@ -326,7 +453,14 @@ class AdminKlaus {
         const sequenceResults = [];
 
         for (const cmd of commands) {
+          // Auto-detect streaming commands as fallback
+          const shouldStream = cmd.is_streaming || this.isStreamingCommand(cmd.command);
+
           this.cli.printCommandExecution(cmd.command, cmd.explanation);
+
+          if (shouldStream) {
+            this.cli.print('  (streaming command - press \'q\' to stop)', 'warning');
+          }
 
           const confirmed = await this.cli.confirm('Execute this command?');
           if (!confirmed) {
@@ -338,11 +472,16 @@ class AdminKlaus {
             continue;
           }
 
-          const spinner = this.cli.startSpinner('Executing...');
-          const result = await this.executeCommand(cmd.command, cmd.requires_sudo);
-          spinner.stop(result.exitCode === 0);
+          let result;
 
-          this.cli.printCommandOutput(result.stdout, result.stderr, result.exitCode);
+          if (shouldStream) {
+            result = await this.executeStreamingCommand(cmd.command, cmd.requires_sudo);
+          } else {
+            const spinner = this.cli.startSpinner('Executing...');
+            result = await this.executeCommand(cmd.command, cmd.requires_sudo);
+            spinner.stop(result.exitCode === 0);
+            this.cli.printCommandOutput(result.stdout, result.stderr, result.exitCode);
+          }
 
           sequenceResults.push({
             command: cmd.command,
@@ -350,9 +489,10 @@ class AdminKlaus {
             stdout: result.stdout,
             stderr: result.stderr,
             success: result.exitCode === 0,
+            aborted: result.aborted || false,
           });
 
-          if (result.exitCode !== 0) {
+          if (result.exitCode !== 0 && !result.aborted) {
             this.cli.print('Command failed!', 'error');
             const shouldContinue = await this.cli.confirm('Continue with remaining commands?');
             if (!shouldContinue) {
@@ -452,16 +592,16 @@ class AdminKlaus {
    */
   async shutdown() {
     this.cli.print('\nShutting down...', 'info');
-    
+
     // Save final logs
     await this.contextManager.saveLogs();
-    
+
     // Disconnect SSH
     this.sshManager.disconnect();
-    
+
     // Close CLI
     this.cli.close();
-    
+
     this.cli.print('Goodbye! 👋\n', 'success');
     process.exit(0);
   }

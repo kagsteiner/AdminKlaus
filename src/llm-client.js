@@ -36,6 +36,7 @@ You can execute bash commands on the remote server. When the user asks you to do
 - If a command fails, STOP and inform the user - ask whether to abort or try to fix
 - For destructive operations (rm, dd, format, etc.), give extra warnings
 - When sudo is needed, indicate this clearly - the system will handle authentication
+- For commands that stream continuous output (pm2 logs, tail -f, journalctl -f, watch, htop, etc.), set is_streaming: true so the user can stop them with 'q'
 
 ## Response Format
 When you need to execute commands, use the execute_command tool. 
@@ -71,6 +72,11 @@ You have access to the conversation history and command output logs. Use them to
               description: 'Whether this command needs sudo privileges',
               default: false,
             },
+            is_streaming: {
+              type: 'boolean',
+              description: 'Set to true for commands that produce continuous output and never terminate on their own (pm2 logs, tail -f, journalctl -f, watch, htop, top, less, etc.). These commands will stream output until the user presses q to stop.',
+              default: false,
+            },
             explanation: {
               type: 'string',
               description: 'Brief explanation of what this command does',
@@ -93,6 +99,7 @@ You have access to the conversation history and command output logs. Use them to
                   command: { type: 'string' },
                   explanation: { type: 'string' },
                   requires_sudo: { type: 'boolean', default: false },
+                  is_streaming: { type: 'boolean', default: false, description: 'Set to true for commands that produce continuous output (pm2 logs, tail -f, etc.)' },
                 },
                 required: ['command', 'explanation'],
               },

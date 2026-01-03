@@ -238,6 +238,83 @@ export class CLI {
   }
 
   /**
+   * Print streaming output header
+   */
+  printStreamingHeader(command) {
+    console.log();
+    console.log(chalk.magenta.bold('┌─ Streaming Output ──────────────────────────────────'));
+    console.log(chalk.magenta('│  ') + chalk.white.bold('$ ' + command));
+    console.log(chalk.magenta('│  ') + chalk.yellow('Press \'q\' to stop streaming'));
+    console.log(chalk.magenta.bold('├─────────────────────────────────────────────────────'));
+  }
+
+  /**
+   * Print streaming output line
+   */
+  printStreamingLine(text) {
+    const lines = text.split('\n');
+    for (const line of lines) {
+      if (line) {
+        console.log(chalk.magenta('│  ') + line);
+      }
+    }
+  }
+
+  /**
+   * Print streaming output footer
+   */
+  printStreamingFooter(aborted) {
+    console.log(chalk.magenta.bold('├─────────────────────────────────────────────────────'));
+    if (aborted) {
+      console.log(chalk.magenta('│  ') + chalk.yellow('Streaming stopped by user'));
+    } else {
+      console.log(chalk.magenta('│  ') + chalk.green('Streaming completed'));
+    }
+    console.log(chalk.magenta.bold('└─────────────────────────────────────────────────────'));
+    console.log();
+  }
+
+  /**
+   * Wait for a specific key press during streaming mode
+   * Returns a promise that resolves when 'q' is pressed
+   * @param {function} onAbort - Callback to call when abort key is pressed
+   * @returns {function} - Cleanup function to stop listening
+   */
+  startStreamingKeyCapture(onAbort) {
+    const stdin = process.stdin;
+    
+    // Pause readline to prevent interference
+    if (this.rl) {
+      this.rl.pause();
+    }
+    
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding('utf8');
+
+    const onData = (key) => {
+      if (key === 'q' || key === 'Q' || key === '\u0003') {
+        // 'q', 'Q', or Ctrl+C
+        cleanup();
+        onAbort();
+      }
+    };
+
+    const cleanup = () => {
+      stdin.removeListener('data', onData);
+      stdin.setRawMode(false);
+      // Resume readline
+      if (this.rl) {
+        this.rl.resume();
+      }
+    };
+
+    stdin.on('data', onData);
+
+    return cleanup;
+  }
+
+  /**
    * Close the CLI
    */
   close() {
