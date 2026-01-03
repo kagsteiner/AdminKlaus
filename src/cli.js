@@ -75,13 +75,13 @@ export class CLI {
     console.log();
     console.log(chalk.cyan.bold('┌─ Klaus ─────────────────────────────────────────────'));
     console.log(chalk.cyan('│'));
-    
+
     // Format the response with proper indentation
     const lines = response.split('\n');
     for (const line of lines) {
       console.log(chalk.cyan('│  ') + chalk.white(line));
     }
-    
+
     console.log(chalk.cyan('│'));
     console.log(chalk.cyan.bold('└─────────────────────────────────────────────────────'));
     console.log();
@@ -110,7 +110,7 @@ export class CLI {
 
     console.log();
     console.log(color.bold(`┌─ Output (${icon} exit: ${exitCode}) ─────────────────────────────`));
-    
+
     if (stdout) {
       const lines = stdout.split('\n').slice(0, 50); // Limit output lines
       for (const line of lines) {
@@ -120,7 +120,7 @@ export class CLI {
         console.log(color('│  ') + chalk.gray('... (output truncated)'));
       }
     }
-    
+
     if (stderr) {
       console.log(color('│'));
       console.log(color('│  ') + chalk.red.bold('STDERR:'));
@@ -129,7 +129,7 @@ export class CLI {
         console.log(color('│  ') + chalk.red(line));
       }
     }
-    
+
     console.log(color.bold('└─────────────────────────────────────────────────────'));
     console.log();
   }
@@ -160,23 +160,45 @@ export class CLI {
     return new Promise((resolve) => {
       const stdin = process.stdin;
       const stdout = process.stdout;
-      
+
+      // Pause readline to prevent interference
+      if (this.rl) {
+        this.rl.pause();
+      }
+
       stdout.write(chalk.yellow(`${promptText}: `));
-      
+
+      // Remove all existing listeners temporarily
+      const existingListeners = stdin.listeners('data');
+      stdin.removeAllListeners('data');
+
       stdin.setRawMode(true);
       stdin.resume();
       stdin.setEncoding('utf8');
 
       let password = '';
-      
+
+      const cleanup = () => {
+        stdin.setRawMode(false);
+        stdin.removeListener('data', onData);
+        // Restore previous listeners
+        for (const listener of existingListeners) {
+          stdin.on('data', listener);
+        }
+        // Resume readline
+        if (this.rl) {
+          this.rl.resume();
+        }
+      };
+
       const onData = (char) => {
         if (char === '\n' || char === '\r' || char === '\u0004') {
-          stdin.setRawMode(false);
-          stdin.removeListener('data', onData);
+          cleanup();
           stdout.write('\n');
           resolve(password);
         } else if (char === '\u0003') {
           // Ctrl+C
+          cleanup();
           process.exit();
         } else if (char === '\u007F' || char === '\b') {
           // Backspace
@@ -186,7 +208,8 @@ export class CLI {
             stdout.cursorTo(0);
             stdout.write(chalk.yellow(`${promptText}: `) + '*'.repeat(password.length));
           }
-        } else {
+        } else if (char.charCodeAt(0) >= 32) {
+          // Only add printable characters
           password += char;
           stdout.write('*');
         }
@@ -213,9 +236,9 @@ export class CLI {
   startSpinner(message) {
     const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
     let i = 0;
-    
+
     process.stdout.write(chalk.cyan(`${frames[0]} ${message}`));
-    
+
     const interval = setInterval(() => {
       i = (i + 1) % frames.length;
       process.stdout.clearLine(0);
@@ -282,31 +305,49 @@ export class CLI {
    */
   startStreamingKeyCapture(onAbort) {
     const stdin = process.stdin;
-    
+
     // Pause readline to prevent interference
     if (this.rl) {
       this.rl.pause();
     }
-    
+
+    // Remove all existing listeners temporarily
+    const existingListeners = stdin.listeners('data');
+    stdin.removeAllListeners('data');
+
     stdin.setRawMode(true);
     stdin.resume();
     stdin.setEncoding('utf8');
 
+    let cleaned = false;
+
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+
+      stdin.removeListener('data', onData);
+      stdin.setRawMode(false);
+
+      // Restore previous listeners
+      for (const listener of existingListeners) {
+        stdin.on('data', listener);
+      }
+
+      // Resume readline after a small delay to ensure buffer is clear
+      setTimeout(() => {
+        if (this.rl) {
+          this.rl.resume();
+        }
+      }, 10);
+    };
+
     const onData = (key) => {
       if (key === 'q' || key === 'Q' || key === '\u0003') {
-        // 'q', 'Q', or Ctrl+C
+        // 'q', 'Q', or Ctrl+C - consume the key and abort
         cleanup();
         onAbort();
       }
-    };
-
-    const cleanup = () => {
-      stdin.removeListener('data', onData);
-      stdin.setRawMode(false);
-      // Resume readline
-      if (this.rl) {
-        this.rl.resume();
-      }
+      // All other keys are consumed/ignored during streaming
     };
 
     stdin.on('data', onData);
