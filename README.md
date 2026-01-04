@@ -2,6 +2,8 @@
 
 An AI-powered shell for Unix/Linux system administrators. Describe what you want to do in natural language, and Klaus will plan and execute the commands for you via SSH.
 
+It's great for people like me who did UNIX administration long ago, forgot details of the commands, but can understand what they do if they see them.
+
 ## Why the name?
 
 Well, there's the famous German video "Gabelstaplerfahrer Klaus", an instruction video for forklift drivers, showing the day of Klaus, the forklist driver. And things GO WRONG.
@@ -15,6 +17,7 @@ Well, there's the famous German video "Gabelstaplerfahrer Klaus", an instruction
 - **SSH-Based**: Works with any remote server via SSH
 - **Context Aware**: Maintains conversation history and command logs
 - **Sudo Support**: Handles privileged commands with password input
+- **Streaming Support**: Knows streaming commands like pm2 logs and handles them interactively - user has to press "q"
 
 ## Quick Start
 
@@ -48,7 +51,7 @@ npm start
    ```
    /connect
    ```
-   Follow the prompts to enter SSH credentials.
+   Follow the prompts to enter SSH credentials, and the sudo password - leave empty if you are sure you will never need admin commands.
 
 2. **Describe your system** (optional but helpful):
    ```
@@ -114,8 +117,13 @@ npm start
 
 - Klaus never stores passwords on disk
 - Sudo passwords are cached in memory for the session only
+- Klaus never passes a password to the LLM, the passwords (particularly the admin passwords for sudo) are only passed when executing a command.
 - All commands require explicit user confirmation
 - Logs are stored locally (not sent to the cloud)
+
+To stress the fourth point: I have taken great care that a) you have to confirm every command that Klaus executes, and b) **exactly** the command is then executed without any LLM or other algorithm changing anything to the command.
+
+I have also checked the code and consider it safe. 
 
 ## Configuration
 
