@@ -7,7 +7,7 @@ export class LLMClient {
   constructor(apiKey, contextManager) {
     this.client = new Anthropic({ apiKey });
     this.contextManager = contextManager;
-    this.model = 'claude-sonnet-4-20250514';
+    this.model = 'claude-sonnet-4-5';
     this.maxTokens = 4096;
   }
 
@@ -139,7 +139,7 @@ You have access to the conversation history and command output logs. Use them to
       const toolBlocks = response.content.filter(block => block.type === 'tool_use');
 
       const responseText = textBlocks.map(b => b.text).join('\n');
-      
+
       // Add assistant response to context
       this.contextManager.addMessage('assistant', response.content);
 
@@ -177,7 +177,7 @@ You have access to the conversation history and command output logs. Use them to
       const toolBlocks = response.content.filter(block => block.type === 'tool_use');
 
       const responseText = textBlocks.map(b => b.text).join('\n');
-      
+
       this.contextManager.addMessage('assistant', response.content);
 
       return {
