@@ -71,6 +71,7 @@ class AdminKlaus {
     }
 
     this.llmClient = new LLMClient(process.env.ANTHROPIC_API_KEY, this.contextManager);
+    console.log(`[AdminKlaus] Using LLM: ${this.llmClient.model}`);
     this.cli.init();
     this.cli.printBanner();
 
