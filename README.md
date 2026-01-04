@@ -11,7 +11,7 @@ Well, there's the famous German video "Gabelstaplerfahrer Klaus", an instruction
 ## Features
 
 - **Natural Language Interface**: Describe your goals in plain English
-- **AI-Powered Planning**: Claude creates a plan and lists the exact commands
+- **AI-Powered Planning**: Claude creates a plan and lists the exact commands (the LLM being used is Sonnet 4.5)
 - **User Confirmation**: Always asks before executing commands
 - **Error Handling**: Stops on failures and asks how to proceed
 - **SSH-Based**: Works with any remote server via SSH
