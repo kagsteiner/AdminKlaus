@@ -117,10 +117,11 @@ npm start
 
 - Klaus never stores passwords on disk
 - Sudo passwords are cached in memory for the session only
+- Klaus never passes a password to the LLM, the passwords (particularly the admin passwords for sudo) are only passed when executing a command.
 - All commands require explicit user confirmation
 - Logs are stored locally (not sent to the cloud)
 
-To stress the third point: I have taken great care that a) you have to confirm every command that Klaus executes, and b) **exactly** the command is then executed without any LLM or other algorithm changing anything to the command.
+To stress the fourth point: I have taken great care that a) you have to confirm every command that Klaus executes, and b) **exactly** the command is then executed without any LLM or other algorithm changing anything to the command.
 
 I have also checked the code and consider it safe. 
 
